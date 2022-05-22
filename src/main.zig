@@ -2,14 +2,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const Atom = struct {
-    pub const AtomType = enum {
+    value: union(enum) {
         nil,
-        pair,
-        symbol,
-        integer,
-    };
-    atom_type: AtomType,
-    value: union {
         pair: *Pair,
         symbol: []const u8,
         integer: i64,
@@ -37,14 +31,13 @@ fn cdrP(p: Atom) *Atom {
 }
 
 fn nilp(atom: Atom) bool {
-    return atom.atom_type == .nil;
+    return atom.value == .nil;
 }
 
-const nil = Atom{ .atom_type = .nil, .value = undefined };
+const nil = Atom{ .value = .nil };
 
 fn cons(a: Allocator, car_val: Atom, cdr_val: Atom) !Atom {
     var pair: Atom = undefined;
-    pair.atom_type = .pair;
     pair.value = .{ .pair = try a.create(Pair) };
     carP(pair).* = car_val;
     cdrP(pair).* = cdr_val;
@@ -53,14 +46,12 @@ fn cons(a: Allocator, car_val: Atom, cdr_val: Atom) !Atom {
 
 fn make_int(x: i64) Atom {
     var atom: Atom = undefined;
-    atom.atom_type = .integer;
     atom.value = .{ .integer = x };
     return atom;
 }
 
 fn make_sym(a: Allocator, s: []const u8) !Atom {
     var atom: Atom = undefined;
-    atom.atom_type = .symbol;
     atom.value = .{ .symbol = try a.dupe(u8, s) };
     return atom;
 }
@@ -70,7 +61,7 @@ const Error = std.fs.File.WriteError;
 fn print_expr(atom: Atom) Error!void {
     const stdout = std.io.getStdOut().writer();
 
-    switch (atom.atom_type) {
+    switch (atom.value) {
         .nil => {
             try stdout.writeAll("NIL");
         },
@@ -79,7 +70,7 @@ fn print_expr(atom: Atom) Error!void {
             try print_expr(car(atom));
             var current_atom = cdr(atom);
             while (!nilp(current_atom)) {
-                if (current_atom.atom_type == .pair) {
+                if (current_atom.value == .pair) {
                     try stdout.writeByte(' ');
                     try print_expr(car(current_atom));
                     current_atom = cdr(current_atom);
