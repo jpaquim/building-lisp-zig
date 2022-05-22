@@ -46,7 +46,7 @@ fn make_int(x: i64) Atom {
     return .{ .value = .{ .integer = x } };
 }
 
-var sym_table = Atom{ .value = .nil };
+var sym_table = nil;
 
 fn make_sym(a: Allocator, s: []const u8) !Atom {
     var atom: Atom = undefined;
@@ -64,9 +64,11 @@ fn make_sym(a: Allocator, s: []const u8) !Atom {
 
 const Error = error{
     Syntax,
-} || std.fs.File.WriteError;
+    OutOfMemory,
+};
 
-fn print_expr(atom: Atom) Error!void {
+const PrintError = std.fs.File.WriteError;
+fn print_expr(atom: Atom) PrintError!void {
     const stdout = std.io.getStdOut().writer();
 
     switch (atom.value) {
@@ -126,7 +128,7 @@ fn strchr(s: []const u8, c: u8) ?*const u8 {
     } else return null;
 }
 
-fn lex(str: []const u8) ![]const u8 {
+fn lex(str: []const u8, end_ptr: *[]const u8) ![]const u8 {
     const ws = " \t\n";
     const delim = "() \t\n";
     const prefix = "()";
@@ -139,8 +141,69 @@ fn lex(str: []const u8) ![]const u8 {
         start + 1
     else
         start + strcspn(str[start..], delim);
-
+    end_ptr.* = str[end..];
     return str[start..end];
+}
+
+fn parse_simple(a: Allocator, input: []const u8) !Atom {
+    if (std.fmt.parseInt(i64, input, 10)) |integer| {
+        return make_int(integer);
+    } else |_| {}
+    const buf = try std.ascii.allocUpperString(a, input);
+    defer a.free(buf);
+    if (std.mem.eql(u8, buf, "NIL")) {
+        return nil;
+    } else {
+        return make_sym(a, buf);
+    }
+}
+
+fn read_list(a: Allocator, input: []const u8, end_ptr: *[]const u8) Error!Atom {
+    var p = nil;
+    var result = nil;
+
+    end_ptr.* = input;
+
+    while (true) {
+        var str = end_ptr.*;
+        const token = try lex(str, end_ptr);
+        if (token[0] == ')') {
+            return result;
+        }
+        if (token[0] == '.' and token.len == 1) {
+            if (nilp(p)) return error.Syntax;
+
+            str = end_ptr.*;
+            const item = try read_expr(a, str, end_ptr);
+            cdrP(p).* = item;
+
+            str = end_ptr.*;
+            const next_token = try lex(str, end_ptr);
+            if (next_token[0] != ')') return error.Syntax;
+            return result;
+        }
+
+        const item = try read_expr(a, str, end_ptr);
+        if (nilp(p)) {
+            result = try cons(a, item, nil);
+            p = result;
+        } else {
+            cdrP(p).* = try cons(a, item, nil);
+            p = cdr(p);
+        }
+    }
+}
+
+fn read_expr(a: Allocator, input: []const u8, end_ptr: *[]const u8) Error!Atom {
+    const token = try lex(input, end_ptr);
+    if (token[0] == '(') {
+        const str = end_ptr.*;
+        return read_list(a, str, end_ptr);
+    } else if (token[0] == ')') {
+        return error.Syntax;
+    } else {
+        return parse_simple(a, token);
+    }
 }
 
 pub fn main() anyerror!void {
@@ -150,26 +213,33 @@ pub fn main() anyerror!void {
     defer arena.deinit();
     const a = arena.allocator();
 
+    const stdin = std.io.getStdIn().reader();
     const stdout = std.io.getStdOut().writer();
 
-    try print_expr(make_int(42));
-    try stdout.writeByte('\n');
+    const input_buffer_length = 256;
+    var input_buffer: [input_buffer_length]u8 = undefined;
 
-    try print_expr(try make_sym(a, "FOO"));
-    try stdout.writeByte('\n');
+    while (true) {
+        try stdout.writeAll("> ");
 
-    try print_expr(try cons(a, try make_sym(a, "X"), try make_sym(a, "Y")));
-    try stdout.writeByte('\n');
-
-    try print_expr(try cons(a, make_int(1), try cons(a, make_int(2), try cons(a, make_int(3), nil))));
-    try stdout.writeByte('\n');
-
-    var i: usize = 0;
-    const str = "(example string)";
-
-    std.debug.print("Lexing {s}\n", .{str});
-    while (lex(str[i..])) |lexeme| {
-        std.debug.print("Lexeme: {s}\n", .{lexeme});
-        i = @ptrToInt(&lexeme[lexeme.len - 1]) - @ptrToInt(&str[0]) + 1;
-    } else |_| {}
+        const input = (try stdin.readUntilDelimiterOrEof(&input_buffer, '\n')) orelse {
+            // reached input end-of-file
+            break;
+        };
+        var end = input;
+        const expr = read_expr(a, input, &end) catch |err| {
+            switch (err) {
+                error.Syntax => {
+                    try stdout.writeAll("Syntax error\n");
+                    break;
+                },
+                error.OutOfMemory => {
+                    try stdout.writeAll("Out of memory!\n");
+                    break;
+                },
+            }
+        };
+        try print_expr(expr);
+        try stdout.writeByte('\n');
+    }
 }
