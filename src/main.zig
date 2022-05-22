@@ -50,9 +50,19 @@ fn make_int(x: i64) Atom {
     return atom;
 }
 
+var sym_table = Atom{ .value = .nil };
+
 fn make_sym(a: Allocator, s: []const u8) !Atom {
     var atom: Atom = undefined;
+    var p = sym_table;
+    while (!nilp(p)) : (p = cdr(p)) {
+        atom = car(p);
+        if (std.mem.eql(u8, atom.value.symbol, s)) {
+            return atom;
+        }
+    }
     atom.value = .{ .symbol = try a.dupe(u8, s) };
+    sym_table = try cons(a, atom, sym_table);
     return atom;
 }
 
