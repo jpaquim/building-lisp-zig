@@ -66,7 +66,9 @@ fn make_sym(a: Allocator, s: []const u8) !Atom {
     return atom;
 }
 
-const Error = std.fs.File.WriteError;
+const Error = error{
+    Syntax,
+} || std.fs.File.WriteError;
 
 fn print_expr(atom: Atom) Error!void {
     const stdout = std.io.getStdOut().writer();
@@ -101,6 +103,50 @@ fn print_expr(atom: Atom) Error!void {
     }
 }
 
+fn strspn(s: []const u8, accept: []const u8) usize {
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        for (accept) |char| {
+            if (s[i] == char) break;
+        } else return i;
+    }
+    return i;
+}
+
+fn strcspn(s: []const u8, reject: []const u8) usize {
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        for (reject) |char| {
+            if (s[i] == char) return i;
+        }
+    }
+    return i;
+}
+
+fn strchr(s: []const u8, c: u8) ?*const u8 {
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        if (s[i] == c) return &s[i];
+    } else return null;
+}
+
+fn lex(str: []const u8) ![]const u8 {
+    const ws = " \t\n";
+    const delim = "() \t\n";
+    const prefix = "()";
+
+    const start = strspn(str, ws);
+
+    if (start == str.len) return error.Syntax;
+
+    const end = if (strchr(prefix, str[start]) != null)
+        start + 1
+    else
+        start + strcspn(str[start..], delim);
+
+    return str[start..end];
+}
+
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -121,4 +167,13 @@ pub fn main() anyerror!void {
 
     try print_expr(try cons(a, make_int(1), try cons(a, make_int(2), try cons(a, make_int(3), nil))));
     try stdout.writeByte('\n');
+
+    var i: usize = 0;
+    const str = "(example string)";
+
+    std.debug.print("Lexing {s}\n", .{str});
+    while (lex(str[i..])) |lexeme| {
+        std.debug.print("Lexeme: {s}\n", .{lexeme});
+        i = @ptrToInt(&lexeme[lexeme.len - 1]) - @ptrToInt(&str[0]) + 1;
+    } else |_| {}
 }
