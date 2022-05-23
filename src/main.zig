@@ -313,6 +313,50 @@ fn builtin_cons(a: Allocator, args: Atom, result: *Atom) !void {
     result.* = try cons(a, car(args), car(cdr(args)));
 }
 
+fn builtin_add(_: Allocator, args: Atom, result: *Atom) !void {
+    if (nilp(args) or nilp(cdr(args)) or !nilp(cdr(cdr(args)))) return error.Args;
+
+    const a = car(args);
+    const b = car(cdr(args));
+
+    if (a.value != .integer or a.value != .integer) return error.Type;
+
+    result.* = make_int(a.value.integer + b.value.integer);
+}
+
+fn builtin_subtract(_: Allocator, args: Atom, result: *Atom) !void {
+    if (nilp(args) or nilp(cdr(args)) or !nilp(cdr(cdr(args)))) return error.Args;
+
+    const a = car(args);
+    const b = car(cdr(args));
+
+    if (a.value != .integer or a.value != .integer) return error.Type;
+
+    result.* = make_int(a.value.integer - b.value.integer);
+}
+
+fn builtin_multiply(_: Allocator, args: Atom, result: *Atom) !void {
+    if (nilp(args) or nilp(cdr(args)) or !nilp(cdr(cdr(args)))) return error.Args;
+
+    const a = car(args);
+    const b = car(cdr(args));
+
+    if (a.value != .integer or a.value != .integer) return error.Type;
+
+    result.* = make_int(a.value.integer * b.value.integer);
+}
+
+fn builtin_divide(_: Allocator, args: Atom, result: *Atom) !void {
+    if (nilp(args) or nilp(cdr(args)) or !nilp(cdr(cdr(args)))) return error.Args;
+
+    const a = car(args);
+    const b = car(cdr(args));
+
+    if (a.value != .integer or a.value != .integer) return error.Type;
+
+    result.* = make_int(@divTrunc(a.value.integer, b.value.integer));
+}
+
 const Error = error{
     Syntax,
     Unbound,
@@ -377,6 +421,11 @@ pub fn main() anyerror!void {
     try env_set(a, env, try make_sym(a, "CAR"), make_builtin(builtin_car));
     try env_set(a, env, try make_sym(a, "CDR"), make_builtin(builtin_cdr));
     try env_set(a, env, try make_sym(a, "CONS"), make_builtin(builtin_cons));
+
+    try env_set(a, env, try make_sym(a, "+"), make_builtin(builtin_add));
+    try env_set(a, env, try make_sym(a, "-"), make_builtin(builtin_subtract));
+    try env_set(a, env, try make_sym(a, "*"), make_builtin(builtin_multiply));
+    try env_set(a, env, try make_sym(a, "/"), make_builtin(builtin_divide));
 
     while (true) {
         try stdout.writeAll("> ");
