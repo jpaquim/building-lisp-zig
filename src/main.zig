@@ -37,17 +37,13 @@ fn nilp(atom: Atom) bool {
 const nil = Atom{ .value = .nil };
 
 fn cons(a: Allocator, car_val: Atom, cdr_val: Atom) !Atom {
-    var pair: Atom = undefined;
-    pair.value = .{ .pair = try a.create(Pair) };
-    carP(pair).* = car_val;
-    cdrP(pair).* = cdr_val;
-    return pair;
+    var pair = try a.create(Pair);
+    pair.* = .{ .atom = .{ car_val, cdr_val } };
+    return Atom{ .value = .{ .pair = pair } };
 }
 
 fn make_int(x: i64) Atom {
-    var atom: Atom = undefined;
-    atom.value = .{ .integer = x };
-    return atom;
+    return .{ .value = .{ .integer = x } };
 }
 
 var sym_table = Atom{ .value = .nil };
