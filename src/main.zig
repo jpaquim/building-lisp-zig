@@ -433,6 +433,46 @@ fn builtin_less(alloc: Allocator, args: Atom, result: *Atom) !void {
     result.* = if (a.value.integer < b.value.integer) try make_sym(alloc, "T") else nil;
 }
 
+fn builtin_apply(a: Allocator, args: Atom, result: *Atom) !void {
+    if (nilp(args) or nilp(cdr(args)) or !nilp(cdr(cdr(args)))) return error.Args;
+
+    const f = car(args);
+    const f_args = car(cdr(args));
+
+    if (!listp(f_args)) return error.Syntax;
+
+    result.* = try apply(a, f, f_args);
+}
+
+fn builtin_eq(alloc: Allocator, args: Atom, result: *Atom) !void {
+    if (nilp(args) or nilp(cdr(args)) or !nilp(cdr(cdr(args)))) return error.Args;
+
+    const a = car(args);
+    const b = car(cdr(args));
+
+    var eq: bool = undefined;
+    if (@enumToInt(a.value) == @enumToInt(b.value)) {
+        switch (a.value) {
+            .nil => eq = true,
+            .pair => |pair| eq = pair == b.value.pair,
+            .closure => |closure| eq = closure == b.value.closure,
+            .macro => |macro| eq = macro == b.value.macro,
+            .symbol => |symbol| eq = sliceEql(symbol, b.value.symbol),
+            .integer => |integer| eq = integer == b.value.integer,
+            .builtin => |builtin| eq = builtin == b.value.builtin,
+        }
+    } else {
+        eq = false;
+    }
+    result.* = if (eq) try make_sym(alloc, "T") else nil;
+}
+
+fn builtin_pairp(a: Allocator, args: Atom, result: *Atom) !void {
+    if (nilp(args) or !nilp(cdr(args))) return error.Args;
+
+    result.* = if (car(args).value == .pair) try make_sym(a, "T") else nil;
+}
+
 fn slurp(a: Allocator, path: []const u8) ![]const u8 {
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
@@ -571,6 +611,10 @@ pub fn main() anyerror!void {
     try env_set(a, env, try make_sym(a, "T"), try make_sym(a, "T"));
     try env_set(a, env, try make_sym(a, "="), make_builtin(builtin_numeq));
     try env_set(a, env, try make_sym(a, "<"), make_builtin(builtin_less));
+
+    try env_set(a, env, try make_sym(a, "APPLY"), make_builtin(builtin_apply));
+    try env_set(a, env, try make_sym(a, "EQ?"), make_builtin(builtin_eq));
+    try env_set(a, env, try make_sym(a, "PAIR?"), make_builtin(builtin_pairp));
 
     try load_file(a, env, "library.lisp");
 

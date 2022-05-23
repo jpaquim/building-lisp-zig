@@ -18,3 +18,15 @@
 
 (define (reverse list)
   (foldl (lambda (a x) (cons x a)) nil list))
+
+(define (unary-map proc list)
+  (foldr (lambda (x rest) (cons (proc x) rest))
+         nil
+         list))
+
+(define (map proc . arg-lists)
+  (if (car arg-lists)
+      (cons (apply proc (unary-map car arg-lists))
+            (apply map (cons proc
+                             (unary-map cdr arg-lists))))
+      nil))
