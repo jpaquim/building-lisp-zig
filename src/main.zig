@@ -6,6 +6,7 @@ const Value = union(enum) {
     pair: *Pair,
     symbol: []const u8,
     integer: i64,
+    builtin: Builtin,
 };
 
 const Atom = struct {
@@ -15,6 +16,8 @@ const Atom = struct {
 const Pair = struct {
     atom: [2]Atom,
 };
+
+const Builtin = fn (a: Allocator, args: Atom, result: *Atom) Error!void;
 
 fn car(p: Atom) Atom {
     return p.value.pair.atom[0];
@@ -64,6 +67,10 @@ fn make_sym(a: Allocator, s: []const u8) !Atom {
     return atom;
 }
 
+fn make_builtin(f: Builtin) Atom {
+    return .{ .value = .{ .builtin = f } };
+}
+
 const PrintError = std.fs.File.WriteError;
 fn print_expr(atom: Atom) PrintError!void {
     const stdout = std.io.getStdOut().writer();
@@ -89,11 +96,14 @@ fn print_expr(atom: Atom) PrintError!void {
             }
             try stdout.writeByte(')');
         },
-        .symbol => {
-            try stdout.writeAll(atom.value.symbol);
+        .symbol => |symbol| {
+            try stdout.writeAll(symbol);
         },
-        .integer => {
-            try stdout.print("{}", .{atom.value.integer});
+        .integer => |integer| {
+            try stdout.print("{}", .{integer});
+        },
+        .builtin => |builtin| {
+            try stdout.print("#<BUILTIN:0x{x}>", .{@ptrToInt(builtin)});
         },
     }
 }
@@ -253,6 +263,56 @@ fn listp(expr: Atom) bool {
     } else return true;
 }
 
+fn copy_list(a: Allocator, list: Atom) !Atom {
+    if (nilp(list)) return nil;
+
+    const result = try cons(a, car(list), nil);
+    var p = result;
+    var it = cdr(list);
+    while (!nilp(it)) : (it = cdr(it)) {
+        cdrP(p).* = try cons(a, car(it), nil);
+        p = cdr(p);
+    }
+    return result;
+}
+
+fn apply(a: Allocator, f: Atom, args: Atom) !Atom {
+    if (f.value == .builtin) {
+        var result: Atom = undefined;
+        try f.value.builtin(a, args, &result);
+        return result;
+    }
+    return error.Type;
+}
+
+fn builtin_car(_: Allocator, args: Atom, result: *Atom) !void {
+    if (nilp(args) or !nilp(cdr(args))) return error.Args;
+
+    if (nilp(car(args)))
+        result.* = nil
+    else if (car(args).value != .pair)
+        return error.Type
+    else
+        result.* = car(car(args));
+}
+
+fn builtin_cdr(_: Allocator, args: Atom, result: *Atom) !void {
+    if (nilp(args) or !nilp(cdr(args))) return error.Args;
+
+    if (nilp(car(args)))
+        result.* = nil
+    else if (car(args).value != .pair)
+        return error.Type
+    else
+        result.* = cdr(car(args));
+}
+
+fn builtin_cons(a: Allocator, args: Atom, result: *Atom) !void {
+    if (nilp(args) or nilp(cdr(args)) or !nilp(cdr(cdr(args)))) return error.Args;
+
+    result.* = try cons(a, car(args), car(cdr(args)));
+}
+
 const Error = error{
     Syntax,
     Unbound,
@@ -289,7 +349,14 @@ fn eval_expr(a: Allocator, expr: Atom, env: Atom) Error!Atom {
             return sym;
         }
     }
-    return error.Syntax;
+
+    const evaled_op = try eval_expr(a, op, env);
+    const evaled_args = try copy_list(a, args);
+    var p = evaled_args;
+    while (!nilp(p)) : (p = cdr(p)) {
+        carP(p).* = try eval_expr(a, car(p), env);
+    }
+    return apply(a, evaled_op, evaled_args);
 }
 
 pub fn main() anyerror!void {
@@ -306,6 +373,10 @@ pub fn main() anyerror!void {
     var input_buffer: [input_buffer_length]u8 = undefined;
 
     var env = try env_create(a, nil);
+
+    try env_set(a, env, try make_sym(a, "CAR"), make_builtin(builtin_car));
+    try env_set(a, env, try make_sym(a, "CDR"), make_builtin(builtin_cdr));
+    try env_set(a, env, try make_sym(a, "CONS"), make_builtin(builtin_cons));
 
     while (true) {
         try stdout.writeAll("> ");
