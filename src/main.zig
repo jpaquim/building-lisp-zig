@@ -433,6 +433,33 @@ fn builtin_less(alloc: Allocator, args: Atom, result: *Atom) !void {
     result.* = if (a.value.integer < b.value.integer) try make_sym(alloc, "T") else nil;
 }
 
+fn slurp(a: Allocator, path: []const u8) ![]const u8 {
+    const file = try std.fs.cwd().openFile(path, .{});
+    defer file.close();
+    const len = @as(usize, (try file.stat()).size);
+    const buf = try file.reader().readAllAlloc(a, len);
+    return buf;
+}
+
+fn load_file(a: Allocator, env: Atom, path: []const u8) !void {
+    const stdout = std.io.getStdOut().writer();
+    try stdout.print("Reading {s}...\n", .{path});
+    const text = try slurp(a, path);
+    defer a.free(text);
+    var p = text;
+    var end = text;
+    while (read_expr(a, p, &end)) |expr| : (p = end) {
+        if (eval_expr(a, expr, env)) |result| {
+            try print_expr(result);
+            try stdout.writeByte('\n');
+        } else |_| {
+            try stdout.print("Error in expression:\n\t", .{});
+            try print_expr(expr);
+            try stdout.writeByte('\n');
+        }
+    } else |_| {}
+}
+
 const Error = error{
     Syntax,
     Unbound,
@@ -544,6 +571,8 @@ pub fn main() anyerror!void {
     try env_set(a, env, try make_sym(a, "T"), try make_sym(a, "T"));
     try env_set(a, env, try make_sym(a, "="), make_builtin(builtin_numeq));
     try env_set(a, env, try make_sym(a, "<"), make_builtin(builtin_less));
+
+    try load_file(a, env, "library.lisp");
 
     while (true) {
         try stdout.writeAll("> ");
