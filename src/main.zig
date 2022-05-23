@@ -157,7 +157,7 @@ fn strchr(s: []const u8, c: u8) ?*const u8 {
 fn lex(str: []const u8, end_ptr: *[]const u8) ![]const u8 {
     const ws = " \t\n";
     const delim = "() \t\n";
-    const prefix = "()";
+    const prefix = "()'";
 
     const start = strspn(str, ws);
 
@@ -232,6 +232,11 @@ fn read_expr(a: Allocator, input: []const u8, end_ptr: *[]const u8) ReadError!At
         return read_list(a, str, end_ptr);
     } else if (token[0] == ')') {
         return error.Syntax;
+    } else if (token[0] == '\'') {
+        const result = try cons(a, try make_sym(a, "QUOTE"), try cons(a, nil, nil));
+        const str = end_ptr.*;
+        carP(cdr(result)).* = try read_expr(a, str, end_ptr);
+        return result;
     } else {
         return parse_simple(a, token);
     }
