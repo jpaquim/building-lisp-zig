@@ -449,12 +449,20 @@ fn eval_expr(a: Allocator, expr: Atom, env: Atom) Error!Atom {
 
             return car(args);
         } else if (std.mem.eql(u8, op.value.symbol, "DEFINE")) {
-            if (nilp(args) or nilp(cdr(args)) or !nilp(cdr(cdr(args)))) return error.Args;
+            if (nilp(args) or nilp(cdr(args))) return error.Args;
 
-            const sym = car(args);
-            if (sym.value != .symbol) return error.Type;
+            var val: Atom = undefined;
+            var sym = car(args);
+            if (sym.value == .pair) {
+                val = try make_closure(a, env, cdr(sym), cdr(args));
+                sym = car(sym);
+                if (sym.value != .symbol) return error.Type;
+            } else if (sym.value == .symbol) {
+                if (!nilp(cdr(cdr(args)))) return error.Args;
 
-            const val = try eval_expr(a, car(cdr(args)), env);
+                val = try eval_expr(a, car(cdr(args)), env);
+            } else return error.Type;
+
             try env_set(a, env, sym, val);
             return sym;
         } else if (std.mem.eql(u8, op.value.symbol, "LAMBDA")) {
