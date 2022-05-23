@@ -7,6 +7,7 @@ const Value = union(enum) {
     symbol: []const u8,
     integer: i64,
     builtin: Builtin,
+    closure: *Pair,
 };
 
 const Atom = struct {
@@ -20,19 +21,23 @@ const Pair = struct {
 const Builtin = fn (a: Allocator, args: Atom, result: *Atom) Error!void;
 
 fn car(p: Atom) Atom {
-    return p.value.pair.atom[0];
+    const pair = if (p.value == .pair) p.value.pair else p.value.closure;
+    return pair.atom[0];
 }
 
 fn carP(p: Atom) *Atom {
-    return &p.value.pair.atom[0];
+    const pair = if (p.value == .pair) p.value.pair else p.value.closure;
+    return &pair.atom[0];
 }
 
 fn cdr(p: Atom) Atom {
-    return p.value.pair.atom[1];
+    const pair = if (p.value == .pair) p.value.pair else p.value.closure;
+    return pair.atom[1];
 }
 
 fn cdrP(p: Atom) *Atom {
-    return &p.value.pair.atom[1];
+    const pair = if (p.value == .pair) p.value.pair else p.value.closure;
+    return &pair.atom[1];
 }
 
 fn nilp(atom: Atom) bool {
@@ -71,6 +76,17 @@ fn make_builtin(f: Builtin) Atom {
     return .{ .value = .{ .builtin = f } };
 }
 
+fn make_closure(a: Allocator, env: Atom, args: Atom, body: Atom) !Atom {
+    if (!listp(args) or !listp(body)) return error.Syntax;
+
+    var p = args;
+    while (!nilp(p)) : (p = cdr(p)) {
+        if (car(p).value != .symbol) return error.Type;
+    }
+    const result = try cons(a, env, try cons(a, args, body));
+    return Atom{ .value = .{ .closure = result.value.pair } };
+}
+
 const PrintError = std.fs.File.WriteError;
 fn print_expr(atom: Atom) PrintError!void {
     const stdout = std.io.getStdOut().writer();
@@ -104,6 +120,9 @@ fn print_expr(atom: Atom) PrintError!void {
         },
         .builtin => |builtin| {
             try stdout.print("#<BUILTIN:0x{x}>", .{@ptrToInt(builtin)});
+        },
+        .closure => |closure| {
+            try stdout.print("#<CLOSURE:0x{x}>", .{@ptrToInt(&closure)});
         },
     }
 }
@@ -281,8 +300,28 @@ fn apply(a: Allocator, f: Atom, args: Atom) !Atom {
         var result: Atom = undefined;
         try f.value.builtin(a, args, &result);
         return result;
+    } else if (f.value != .closure) return error.Type;
+
+    const env = try env_create(a, car(f));
+    var arg_names = car(cdr(f));
+    var it = args;
+    while (!nilp(arg_names)) : ({
+        arg_names = cdr(arg_names);
+        it = cdr(it);
+    }) {
+        if (nilp(it)) return error.Args;
+
+        try env_set(a, env, car(arg_names), car(it));
     }
-    return error.Type;
+    if (!nilp(it)) return error.Args;
+
+    var result: Atom = undefined;
+
+    var body = cdr(cdr(f));
+    while (!nilp(body)) : (body = cdr(body)) {
+        result = try eval_expr(a, car(body), env);
+    }
+    return result;
 }
 
 fn builtin_car(_: Allocator, args: Atom, result: *Atom) !void {
@@ -391,6 +430,9 @@ fn eval_expr(a: Allocator, expr: Atom, env: Atom) Error!Atom {
             const val = try eval_expr(a, car(cdr(args)), env);
             try env_set(a, env, sym, val);
             return sym;
+        } else if (std.mem.eql(u8, op.value.symbol, "LAMBDA")) {
+            if (nilp(args) or nilp(cdr(args))) return error.Args;
+            return make_closure(a, env, car(args), cdr(args));
         }
     }
 
