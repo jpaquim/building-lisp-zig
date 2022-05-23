@@ -8,6 +8,7 @@ const Value = union(enum) {
     integer: i64,
     builtin: Builtin,
     closure: *Pair,
+    macro: *Pair,
 };
 
 const Atom = struct {
@@ -124,6 +125,9 @@ fn print_expr(atom: Atom) PrintError!void {
         },
         .closure => |closure| {
             try stdout.print("#<CLOSURE:0x{x}>", .{@ptrToInt(&closure)});
+        },
+        .macro => |macro| {
+            try stdout.print("#<MACRO:0x{x}>", .{@ptrToInt(&macro)});
         },
     }
 }
@@ -450,6 +454,7 @@ fn eval_expr(a: Allocator, expr: Atom, env: Atom) Error!Atom {
     const args = cdr(expr);
 
     if (op.value == .symbol) {
+        // evaluate special forms
         if (std.mem.eql(u8, op.value.symbol, "QUOTE")) {
             if (nilp(args) or !nilp(cdr(args))) return error.Args;
 
@@ -480,10 +485,30 @@ fn eval_expr(a: Allocator, expr: Atom, env: Atom) Error!Atom {
             const cond = try eval_expr(a, car(args), env);
             const val = if (nilp(cond)) car(cdr(cdr(args))) else car(cdr(args));
             return eval_expr(a, val, env);
+        } else if (std.mem.eql(u8, op.value.symbol, "DEFMACRO")) {
+            if (nilp(args) or nilp(cdr(args))) return error.Args;
+
+            if (car(args).value != .pair) return error.Syntax;
+
+            const name = car(car(args));
+            if (name.value != .symbol) return error.Type;
+
+            const macro_closure = try make_closure(a, env, cdr(car(args)), cdr(args));
+            const macro = Atom{ .value = .{ .macro = macro_closure.value.closure } };
+            try env_set(a, env, name, macro);
+            return name;
         }
     }
 
+    // evaluate operator
     const evaled_op = try eval_expr(a, op, env);
+    if (evaled_op.value == .macro) {
+        const macro = evaled_op.value.macro;
+        // expand macro
+        const expansion = try apply(a, Atom{ .value = .{ .closure = macro } }, args);
+        return eval_expr(a, expansion, env);
+    }
+    // evaluate arguments
     const evaled_args = try copy_list(a, args);
     var p = evaled_args;
     while (!nilp(p)) : (p = cdr(p)) {
