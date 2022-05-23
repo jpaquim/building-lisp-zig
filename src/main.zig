@@ -396,6 +396,28 @@ fn builtin_divide(_: Allocator, args: Atom, result: *Atom) !void {
     result.* = make_int(@divTrunc(a.value.integer, b.value.integer));
 }
 
+fn builtin_numeq(alloc: Allocator, args: Atom, result: *Atom) !void {
+    if (nilp(args) or nilp(cdr(args)) or !nilp(cdr(cdr(args)))) return error.Args;
+
+    const a = car(args);
+    const b = car(cdr(args));
+
+    if (a.value != .integer or a.value != .integer) return error.Type;
+
+    result.* = if (a.value.integer == b.value.integer) try make_sym(alloc, "T") else nil;
+}
+
+fn builtin_less(alloc: Allocator, args: Atom, result: *Atom) !void {
+    if (nilp(args) or nilp(cdr(args)) or !nilp(cdr(cdr(args)))) return error.Args;
+
+    const a = car(args);
+    const b = car(cdr(args));
+
+    if (a.value != .integer or a.value != .integer) return error.Type;
+
+    result.* = if (a.value.integer < b.value.integer) try make_sym(alloc, "T") else nil;
+}
+
 const Error = error{
     Syntax,
     Unbound,
@@ -433,6 +455,12 @@ fn eval_expr(a: Allocator, expr: Atom, env: Atom) Error!Atom {
         } else if (std.mem.eql(u8, op.value.symbol, "LAMBDA")) {
             if (nilp(args) or nilp(cdr(args))) return error.Args;
             return make_closure(a, env, car(args), cdr(args));
+        } else if (std.mem.eql(u8, op.value.symbol, "IF")) {
+            if (nilp(args) or nilp(cdr(args)) or nilp(cdr(cdr(args))) or !nilp(cdr(cdr(cdr(args)))))
+                return error.Args;
+            const cond = try eval_expr(a, car(args), env);
+            const val = if (nilp(cond)) car(cdr(cdr(args))) else car(cdr(args));
+            return eval_expr(a, val, env);
         }
     }
 
@@ -468,6 +496,10 @@ pub fn main() anyerror!void {
     try env_set(a, env, try make_sym(a, "-"), make_builtin(builtin_subtract));
     try env_set(a, env, try make_sym(a, "*"), make_builtin(builtin_multiply));
     try env_set(a, env, try make_sym(a, "/"), make_builtin(builtin_divide));
+
+    try env_set(a, env, try make_sym(a, "T"), try make_sym(a, "T"));
+    try env_set(a, env, try make_sym(a, "="), make_builtin(builtin_numeq));
+    try env_set(a, env, try make_sym(a, "<"), make_builtin(builtin_less));
 
     while (true) {
         try stdout.writeAll("> ");
