@@ -162,7 +162,7 @@ fn strchr(s: []const u8, c: u8) ?*const u8 {
 fn lex(str: []const u8, end_ptr: *[]const u8) ![]const u8 {
     const ws = " \t\n";
     const delim = "() \t\n";
-    const prefix = "()'";
+    const prefix = "()'`";
 
     const start = strspn(str, ws);
 
@@ -170,6 +170,8 @@ fn lex(str: []const u8, end_ptr: *[]const u8) ![]const u8 {
 
     const end = if (strchr(prefix, str[start]) != null)
         start + 1
+    else if (str[start] == ',')
+        start + @as(usize, if (str[start + 1] == '@') 2 else 1)
     else
         start + strcspn(str[start..], delim);
     end_ptr.* = str[end..];
@@ -232,14 +234,25 @@ fn read_list(a: Allocator, input: []const u8, end_ptr: *[]const u8) ReadError!At
 
 fn read_expr(a: Allocator, input: []const u8, end_ptr: *[]const u8) ReadError!Atom {
     const token = try lex(input, end_ptr);
+    const str = end_ptr.*;
     if (token[0] == '(') {
-        const str = end_ptr.*;
         return read_list(a, str, end_ptr);
     } else if (token[0] == ')') {
         return error.Syntax;
     } else if (token[0] == '\'') {
         const result = try cons(a, try make_sym(a, "QUOTE"), try cons(a, nil, nil));
-        const str = end_ptr.*;
+        carP(cdr(result)).* = try read_expr(a, str, end_ptr);
+        return result;
+    } else if (token[0] == '`') {
+        const result = try cons(a, try make_sym(a, "QUASIQUOTE"), try cons(a, nil, nil));
+        carP(cdr(result)).* = try read_expr(a, str, end_ptr);
+        return result;
+    } else if (token[0] == ',') {
+        const result = try cons(
+            a,
+            try make_sym(a, if (token.len > 1 and token[1] == '@') "UNQUOTE-SPLICING" else "UNQUOTE"),
+            try cons(a, nil, nil),
+        );
         carP(cdr(result)).* = try read_expr(a, str, end_ptr);
         return result;
     } else {
