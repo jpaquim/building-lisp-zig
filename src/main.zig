@@ -1,13 +1,15 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const Value = union(enum) {
+    nil,
+    pair: *Pair,
+    symbol: []const u8,
+    integer: i64,
+};
+
 const Atom = struct {
-    value: union(enum) {
-        nil,
-        pair: *Pair,
-        symbol: []const u8,
-        integer: i64,
-    },
+    value: Value,
 };
 
 const Pair = struct {
@@ -61,11 +63,6 @@ fn make_sym(a: Allocator, s: []const u8) !Atom {
     sym_table = try cons(a, atom, sym_table);
     return atom;
 }
-
-const Error = error{
-    Syntax,
-    OutOfMemory,
-};
 
 const PrintError = std.fs.File.WriteError;
 fn print_expr(atom: Atom) PrintError!void {
@@ -158,7 +155,12 @@ fn parse_simple(a: Allocator, input: []const u8) !Atom {
     }
 }
 
-fn read_list(a: Allocator, input: []const u8, end_ptr: *[]const u8) Error!Atom {
+const ReadError = error{
+    Syntax,
+    OutOfMemory,
+};
+
+fn read_list(a: Allocator, input: []const u8, end_ptr: *[]const u8) ReadError!Atom {
     var p = nil;
     var result = nil;
 
@@ -194,7 +196,7 @@ fn read_list(a: Allocator, input: []const u8, end_ptr: *[]const u8) Error!Atom {
     }
 }
 
-fn read_expr(a: Allocator, input: []const u8, end_ptr: *[]const u8) Error!Atom {
+fn read_expr(a: Allocator, input: []const u8, end_ptr: *[]const u8) ReadError!Atom {
     const token = try lex(input, end_ptr);
     if (token[0] == '(') {
         const str = end_ptr.*;
@@ -204,6 +206,90 @@ fn read_expr(a: Allocator, input: []const u8, end_ptr: *[]const u8) Error!Atom {
     } else {
         return parse_simple(a, token);
     }
+}
+
+fn env_create(a: Allocator, parent: Atom) !Atom {
+    return cons(a, parent, nil);
+}
+
+fn env_get(env: Atom, symbol: Atom) error{Unbound}!Atom {
+    const parent = car(env);
+    var bs = cdr(env);
+    while (!nilp(bs)) {
+        const b = car(bs);
+        if (sliceEql(car(b).value.symbol, symbol.value.symbol)) {
+            return cdr(b);
+        }
+        bs = cdr(bs);
+    }
+    if (nilp(parent)) return error.Unbound;
+    return env_get(parent, symbol);
+}
+
+fn sliceEql(a: []const u8, b: []const u8) bool {
+    return a.ptr == b.ptr and a.len == b.len;
+}
+
+fn env_set(a: Allocator, env: Atom, symbol: Atom, value: Atom) !void {
+    var bs = cdr(env);
+    var b = nil;
+    while (!nilp(bs)) {
+        b = car(bs);
+        const car_b = car(b);
+        if (sliceEql(car_b.value.symbol, symbol.value.symbol)) {
+            cdrP(b).* = value;
+            return;
+        }
+        bs = cdr(bs);
+    }
+    b = try cons(a, symbol, value);
+    cdrP(env).* = try cons(a, b, cdr(env));
+}
+
+fn listp(expr: Atom) bool {
+    var it = expr;
+    while (!nilp(it)) : (it = cdr(it)) {
+        if (it.value != .pair) return false;
+    } else return true;
+}
+
+const Error = error{
+    Syntax,
+    Unbound,
+    Args,
+    Type,
+    OutOfMemory,
+};
+
+fn eval_expr(a: Allocator, expr: Atom, env: Atom) Error!Atom {
+    if (expr.value == .symbol) {
+        return env_get(env, expr);
+    } else if (expr.value != .pair) {
+        return expr;
+    }
+
+    if (!listp(expr)) return error.Syntax;
+
+    const op = car(expr);
+    const args = cdr(expr);
+
+    if (op.value == .symbol) {
+        if (std.mem.eql(u8, op.value.symbol, "QUOTE")) {
+            if (nilp(args) or !nilp(cdr(args))) return error.Args;
+
+            return car(args);
+        } else if (std.mem.eql(u8, op.value.symbol, "DEFINE")) {
+            if (nilp(args) or nilp(cdr(args)) or !nilp(cdr(cdr(args)))) return error.Args;
+
+            const sym = car(args);
+            if (sym.value != .symbol) return error.Type;
+
+            const val = try eval_expr(a, car(cdr(args)), env);
+            try env_set(a, env, sym, val);
+            return sym;
+        }
+    }
+    return error.Syntax;
 }
 
 pub fn main() anyerror!void {
@@ -219,6 +305,8 @@ pub fn main() anyerror!void {
     const input_buffer_length = 256;
     var input_buffer: [input_buffer_length]u8 = undefined;
 
+    var env = try env_create(a, nil);
+
     while (true) {
         try stdout.writeAll("> ");
 
@@ -228,18 +316,27 @@ pub fn main() anyerror!void {
         };
         var end = input;
         const expr = read_expr(a, input, &end) catch |err| {
-            switch (err) {
-                error.Syntax => {
-                    try stdout.writeAll("Syntax error\n");
-                    break;
-                },
-                error.OutOfMemory => {
-                    try stdout.writeAll("Out of memory!\n");
-                    break;
-                },
-            }
+            const message = switch (err) {
+                error.Syntax => "Syntax error",
+                error.OutOfMemory => "Out of memory!",
+            };
+            try stdout.writeAll(message);
+            try stdout.writeByte('\n');
+            continue;
         };
-        try print_expr(expr);
+        const result = eval_expr(a, expr, env) catch |err| {
+            const message = switch (err) {
+                error.Syntax => "Syntax error",
+                error.Unbound => "Symbol not bound",
+                error.Args => "Wrong number of arguments",
+                error.Type => "Wrong type",
+                error.OutOfMemory => "Out of memory!",
+            };
+            try stdout.writeAll(message);
+            try stdout.writeByte('\n');
+            continue;
+        };
+        try print_expr(result);
         try stdout.writeByte('\n');
     }
 }
