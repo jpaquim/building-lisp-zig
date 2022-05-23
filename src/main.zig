@@ -77,11 +77,12 @@ fn make_builtin(f: Builtin) Atom {
 }
 
 fn make_closure(a: Allocator, env: Atom, args: Atom, body: Atom) !Atom {
-    if (!listp(args) or !listp(body)) return error.Syntax;
+    if (!listp(body)) return error.Syntax;
 
     var p = args;
     while (!nilp(p)) : (p = cdr(p)) {
-        if (car(p).value != .symbol) return error.Type;
+        if (p.value == .symbol) break else if (p.value != .pair or car(p).value != .symbol)
+            return error.Type;
     }
     const result = try cons(a, env, try cons(a, args, body));
     return Atom{ .value = .{ .closure = result.value.pair } };
@@ -314,6 +315,11 @@ fn apply(a: Allocator, f: Atom, args: Atom) !Atom {
         arg_names = cdr(arg_names);
         it = cdr(it);
     }) {
+        if (arg_names.value == .symbol) {
+            try env_set(a, env, arg_names, it);
+            it = nil;
+            break;
+        }
         if (nilp(it)) return error.Args;
 
         try env_set(a, env, car(arg_names), car(it));
