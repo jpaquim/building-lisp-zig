@@ -104,7 +104,7 @@ fn parse_simple(a: Allocator, input: []const u8) !Atom {
 
 fn lex(str: []const u8, end_ptr: *[]const u8) ![]const u8 {
     const ws = " \t\n";
-    const delim = "() \t\n";
+    const delim = "(); \t\n";
     const prefix = "()'`";
 
     const start = strspn(str, ws);
@@ -115,6 +115,8 @@ fn lex(str: []const u8, end_ptr: *[]const u8) ![]const u8 {
         start + 1
     else if (str[start] == ',')
         start + @as(usize, if (str[start + 1] == '@') 2 else 1)
+    else if (str[start] == ';')
+        return if (std.mem.indexOf(u8, str[start..], "\n")) |index| return lex(str[start + index ..], end_ptr) else return error.Syntax
     else
         start + strcspn(str[start..], delim);
     end_ptr.* = str[end..];
