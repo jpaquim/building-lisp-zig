@@ -101,6 +101,20 @@ fn gc(alloc: Allocator) void {
     }
 }
 
+fn deinit(alloc: Allocator) void {
+    var it = sym_table;
+    while (!nilp(it)) : (it = cdr(it)) {
+        const sym = car(it);
+        alloc.free(sym.value.symbol);
+    }
+
+    var p = &global_allocations;
+    while (p.*) |a| {
+        p.* = a.next;
+        alloc.destroy(a);
+    }
+}
+
 fn make_int(x: i64) Atom {
     return .{ .value = .{ .integer = x } };
 }
@@ -850,6 +864,8 @@ pub fn main() anyerror!void {
     // var arena = std.heap.ArenaAllocator.init(gpa.allocator());
     // defer arena.deinit();
     // const a = arena.allocator();
+
+    defer deinit(a);
 
     const stdin = std.io.getStdIn().reader();
     const stdout = std.io.getStdOut().writer();
