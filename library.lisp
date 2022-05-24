@@ -54,6 +54,12 @@
   `((lambda ,(map car defs) ,@body)
     ,@(map cadr defs)))
 
-(define +
-  (let ((old+ +))
-    (lambda xs (foldl old+ 0 xs))))
+(define (count n)
+  (if (= n 0)
+      0
+      (+ 1 (count (- n 1)))))
+
+(define (count-tc n a)
+  (if (= n 0)
+      a
+      (count-tc (- n 1) (+ a 1))))
