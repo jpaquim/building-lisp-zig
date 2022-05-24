@@ -40,9 +40,9 @@ pub fn eval_expr(a: Allocator, expr_arg: Atom, env_arg: Atom) Error!Atom {
             gc(a);
             count = 0;
         }
-        if (expr.value == .symbol) {
+        if (expr == .symbol) {
             result = try env_get(env, expr);
-        } else if (expr.value != .pair) {
+        } else if (expr != .pair) {
             result = expr;
         } else if (!listp(expr))
             return error.Syntax
@@ -50,23 +50,23 @@ pub fn eval_expr(a: Allocator, expr_arg: Atom, env_arg: Atom) Error!Atom {
             const op = car(expr);
             const args = cdr(expr);
 
-            if (op.value == .symbol) {
+            if (op == .symbol) {
                 // evaluate special forms
-                if (std.mem.eql(u8, op.value.symbol, "QUOTE")) {
+                if (std.mem.eql(u8, op.symbol, "QUOTE")) {
                     if (nilp(args) or !nilp(cdr(args))) return error.Args;
 
                     result = car(args);
-                } else if (std.mem.eql(u8, op.value.symbol, "DEFINE")) {
+                } else if (std.mem.eql(u8, op.symbol, "DEFINE")) {
                     if (nilp(args) or nilp(cdr(args))) return error.Args;
 
                     var sym = car(args);
-                    if (sym.value == .pair) {
+                    if (sym == .pair) {
                         result = try make_closure(a, env, cdr(sym), cdr(args));
                         sym = car(sym);
-                        if (sym.value != .symbol) return error.Type;
+                        if (sym != .symbol) return error.Type;
                         try env_set(a, env, sym, result);
                         result = sym;
-                    } else if (sym.value == .symbol) {
+                    } else if (sym == .symbol) {
                         if (!nilp(cdr(cdr(args)))) return error.Args;
 
                         stack = try make_frame(a, stack, env, nil);
@@ -75,10 +75,10 @@ pub fn eval_expr(a: Allocator, expr_arg: Atom, env_arg: Atom) Error!Atom {
                         expr = car(cdr(args));
                         continue;
                     } else return error.Type;
-                } else if (std.mem.eql(u8, op.value.symbol, "LAMBDA")) {
+                } else if (std.mem.eql(u8, op.symbol, "LAMBDA")) {
                     if (nilp(args) or nilp(cdr(args))) return error.Args;
                     result = try make_closure(a, env, car(args), cdr(args));
-                } else if (std.mem.eql(u8, op.value.symbol, "IF")) {
+                } else if (std.mem.eql(u8, op.symbol, "IF")) {
                     if (nilp(args) or nilp(cdr(args)) or nilp(cdr(cdr(args))) or !nilp(cdr(cdr(cdr(args)))))
                         return error.Args;
 
@@ -86,19 +86,19 @@ pub fn eval_expr(a: Allocator, expr_arg: Atom, env_arg: Atom) Error!Atom {
                     list_set(stack, 2, op);
                     expr = car(args);
                     continue;
-                } else if (std.mem.eql(u8, op.value.symbol, "DEFMACRO")) {
+                } else if (std.mem.eql(u8, op.symbol, "DEFMACRO")) {
                     if (nilp(args) or nilp(cdr(args))) return error.Args;
 
-                    if (car(args).value != .pair) return error.Syntax;
+                    if (car(args) != .pair) return error.Syntax;
 
                     const name = car(car(args));
-                    if (name.value != .symbol) return error.Type;
+                    if (name != .symbol) return error.Type;
 
                     const macro_closure = try make_closure(a, env, cdr(car(args)), cdr(args));
-                    const macro = Atom{ .value = .{ .macro = macro_closure.value.closure } };
+                    const macro = Atom{ .macro = macro_closure.closure };
                     result = name;
                     try env_set(a, env, name, macro);
-                } else if (std.mem.eql(u8, op.value.symbol, "APPLY")) {
+                } else if (std.mem.eql(u8, op.symbol, "APPLY")) {
                     if (nilp(args) or nilp(cdr(args)) or !nilp(cdr(cdr(args)))) return error.Args;
                     stack = try make_frame(a, stack, env, cdr(args));
                     list_set(stack, 2, op);
@@ -110,8 +110,8 @@ pub fn eval_expr(a: Allocator, expr_arg: Atom, env_arg: Atom) Error!Atom {
                     expr = op;
                     continue;
                 }
-            } else if (op.value == .builtin) {
-                try op.value.builtin(a, args, &result);
+            } else if (op == .builtin) {
+                try op.builtin(a, args, &result);
             } else {
                 // push:
                 stack = try make_frame(a, stack, env, args);
@@ -137,7 +137,7 @@ pub fn env_get(env: Atom, symbol: Atom) error{Unbound}!Atom {
     var bs = cdr(env);
     while (!nilp(bs)) {
         const b = car(bs);
-        if (sliceEql(car(b).value.symbol, symbol.value.symbol)) {
+        if (sliceEql(car(b).symbol, symbol.symbol)) {
             return cdr(b);
         }
         bs = cdr(bs);
@@ -152,7 +152,7 @@ pub fn env_set(a: Allocator, env: Atom, symbol: Atom, value: Atom) !void {
     while (!nilp(bs)) {
         b = car(bs);
         const car_b = car(b);
-        if (sliceEql(car_b.value.symbol, symbol.value.symbol)) {
+        if (sliceEql(car_b.symbol, symbol.symbol)) {
             cdrP(b).* = value;
             return;
         }
@@ -167,11 +167,11 @@ fn make_closure(a: Allocator, env: Atom, args: Atom, body: Atom) !Atom {
 
     var p = args;
     while (!nilp(p)) : (p = cdr(p)) {
-        if (p.value == .symbol) break else if (p.value != .pair or car(p).value != .symbol)
+        if (p == .symbol) break else if (p != .pair or car(p) != .symbol)
             return error.Type;
     }
     const result = try cons(a, env, try cons(a, args, body));
-    return Atom{ .value = .{ .closure = result.value.pair } };
+    return Atom{ .closure = result.pair };
 }
 
 fn make_frame(a: Allocator, parent: Atom, env: Atom, tail: Atom) !Atom {
@@ -211,7 +211,7 @@ fn eval_do_bind(a: Allocator, stack: *Atom, expr: *Atom, env: *Atom) !void {
         arg_names = cdr(arg_names);
         args = cdr(args);
     }) {
-        if (arg_names.value == .symbol) {
+        if (arg_names == .symbol) {
             try env_set(a, env.*, arg_names, args);
             args = nil;
             break;
@@ -237,8 +237,8 @@ fn eval_do_apply(a: Allocator, stack: *Atom, expr: *Atom, env: *Atom, result: *A
         list_set(stack.*, 4, args);
     }
 
-    if (op.value == .symbol) {
-        if (std.mem.eql(u8, op.value.symbol, "APPLY")) {
+    if (op == .symbol) {
+        if (std.mem.eql(u8, op.symbol, "APPLY")) {
             stack.* = car(stack.*);
             stack.* = try make_frame(a, stack.*, env.*, nil);
             op = car(args);
@@ -250,11 +250,11 @@ fn eval_do_apply(a: Allocator, stack: *Atom, expr: *Atom, env: *Atom, result: *A
         }
     }
 
-    if (op.value == .builtin) {
+    if (op == .builtin) {
         stack.* = car(stack.*);
         expr.* = try cons(a, op, args);
         return;
-    } else if (op.value != .closure) return error.Type;
+    } else if (op != .closure) return error.Type;
 
     return eval_do_bind(a, stack, expr, env);
 }
@@ -271,23 +271,23 @@ fn eval_do_return(a: Allocator, stack: *Atom, expr: *Atom, env: *Atom, result: *
         op = result.*;
         list_set(stack.*, 2, op);
 
-        if (op.value == .macro) {
+        if (op == .macro) {
             args = list_get(stack.*, 3);
             stack.* = try make_frame(a, stack.*, env.*, nil);
-            const macro = op.value.macro;
-            op.value = .{ .closure = macro };
+            const macro = op.macro;
+            op = .{ .closure = macro };
             list_set(stack.*, 2, op);
             list_set(stack.*, 4, args);
             return eval_do_bind(a, stack, expr, env);
         }
-    } else if (op.value == .symbol) {
-        if (std.mem.eql(u8, op.value.symbol, "DEFINE")) {
+    } else if (op == .symbol) {
+        if (std.mem.eql(u8, op.symbol, "DEFINE")) {
             const sym = list_get(stack.*, 4);
             try env_set(a, env.*, sym, result.*);
             stack.* = car(stack.*);
             expr.* = try cons(a, try make_sym(a, "QUOTE"), try cons(a, sym, nil));
             return;
-        } else if (std.mem.eql(u8, op.value.symbol, "IF")) {
+        } else if (std.mem.eql(u8, op.symbol, "IF")) {
             args = list_get(stack.*, 3);
             expr.* = if (nilp(result.*)) car(cdr(args)) else car(args);
             stack.* = car(stack.*);
@@ -297,7 +297,7 @@ fn eval_do_return(a: Allocator, stack: *Atom, expr: *Atom, env: *Atom, result: *
             args = list_get(stack.*, 4);
             list_set(stack.*, 4, try cons(a, result.*, args));
         }
-    } else if (op.value == .macro) {
+    } else if (op == .macro) {
         expr.* = result.*;
         stack.* = car(stack.*);
         return;

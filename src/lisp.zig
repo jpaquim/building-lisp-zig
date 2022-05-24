@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const Value = union(enum) {
+pub const Atom = union(enum) {
     nil,
     pair: *Pair,
     symbol: []const u8,
@@ -9,10 +9,6 @@ const Value = union(enum) {
     builtin: Builtin,
     closure: *Pair,
     macro: *Pair,
-};
-
-pub const Atom = struct {
-    value: Value,
 };
 
 pub const Pair = struct {
@@ -30,27 +26,27 @@ pub const Error = error{
 };
 
 pub fn car(p: Atom) Atom {
-    const pair = if (p.value == .pair) p.value.pair else if (p.value == .closure) p.value.closure else p.value.macro;
+    const pair = if (p == .pair) p.pair else if (p == .closure) p.closure else p.macro;
     return pair.atom[0];
 }
 
 pub fn carP(p: Atom) *Atom {
-    const pair = if (p.value == .pair) p.value.pair else if (p.value == .closure) p.value.closure else p.value.macro;
+    const pair = if (p == .pair) p.pair else if (p == .closure) p.closure else p.macro;
     return &pair.atom[0];
 }
 
 pub fn cdr(p: Atom) Atom {
-    const pair = if (p.value == .pair) p.value.pair else if (p.value == .closure) p.value.closure else p.value.macro;
+    const pair = if (p == .pair) p.pair else if (p == .closure) p.closure else p.macro;
     return pair.atom[1];
 }
 
 pub fn cdrP(p: Atom) *Atom {
-    const pair = if (p.value == .pair) p.value.pair else if (p.value == .closure) p.value.closure else p.value.macro;
+    const pair = if (p == .pair) p.pair else if (p == .closure) p.closure else p.macro;
     return &pair.atom[1];
 }
 
 pub fn nilp(atom: Atom) bool {
-    return atom.value == .nil;
+    return atom == .nil;
 }
 
-pub const nil = Atom{ .value = .nil };
+pub const nil: Atom = .nil;

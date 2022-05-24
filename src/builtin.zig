@@ -20,7 +20,7 @@ pub fn builtin_car(_: Allocator, args: Atom, result: *Atom) !void {
 
     if (nilp(car(args)))
         result.* = nil
-    else if (car(args).value != .pair)
+    else if (car(args) != .pair)
         return error.Type
     else
         result.* = car(car(args));
@@ -31,7 +31,7 @@ pub fn builtin_cdr(_: Allocator, args: Atom, result: *Atom) !void {
 
     if (nilp(car(args)))
         result.* = nil
-    else if (car(args).value != .pair)
+    else if (car(args) != .pair)
         return error.Type
     else
         result.* = cdr(car(args));
@@ -49,9 +49,9 @@ pub fn builtin_add(_: Allocator, args: Atom, result: *Atom) !void {
     const a = car(args);
     const b = car(cdr(args));
 
-    if (a.value != .integer or a.value != .integer) return error.Type;
+    if (a != .integer or a != .integer) return error.Type;
 
-    result.* = make_int(a.value.integer + b.value.integer);
+    result.* = make_int(a.integer + b.integer);
 }
 
 pub fn builtin_subtract(_: Allocator, args: Atom, result: *Atom) !void {
@@ -60,9 +60,9 @@ pub fn builtin_subtract(_: Allocator, args: Atom, result: *Atom) !void {
     const a = car(args);
     const b = car(cdr(args));
 
-    if (a.value != .integer or a.value != .integer) return error.Type;
+    if (a != .integer or a != .integer) return error.Type;
 
-    result.* = make_int(a.value.integer - b.value.integer);
+    result.* = make_int(a.integer - b.integer);
 }
 
 pub fn builtin_multiply(_: Allocator, args: Atom, result: *Atom) !void {
@@ -71,9 +71,9 @@ pub fn builtin_multiply(_: Allocator, args: Atom, result: *Atom) !void {
     const a = car(args);
     const b = car(cdr(args));
 
-    if (a.value != .integer or a.value != .integer) return error.Type;
+    if (a != .integer or a != .integer) return error.Type;
 
-    result.* = make_int(a.value.integer * b.value.integer);
+    result.* = make_int(a.integer * b.integer);
 }
 
 pub fn builtin_divide(_: Allocator, args: Atom, result: *Atom) !void {
@@ -82,9 +82,9 @@ pub fn builtin_divide(_: Allocator, args: Atom, result: *Atom) !void {
     const a = car(args);
     const b = car(cdr(args));
 
-    if (a.value != .integer or a.value != .integer) return error.Type;
+    if (a != .integer or a != .integer) return error.Type;
 
-    result.* = make_int(@divTrunc(a.value.integer, b.value.integer));
+    result.* = make_int(@divTrunc(a.integer, b.integer));
 }
 
 pub fn builtin_numeq(alloc: Allocator, args: Atom, result: *Atom) !void {
@@ -93,9 +93,9 @@ pub fn builtin_numeq(alloc: Allocator, args: Atom, result: *Atom) !void {
     const a = car(args);
     const b = car(cdr(args));
 
-    if (a.value != .integer or a.value != .integer) return error.Type;
+    if (a != .integer or a != .integer) return error.Type;
 
-    result.* = if (a.value.integer == b.value.integer) try make_sym(alloc, "T") else nil;
+    result.* = if (a.integer == b.integer) try make_sym(alloc, "T") else nil;
 }
 
 pub fn builtin_less(alloc: Allocator, args: Atom, result: *Atom) !void {
@@ -104,9 +104,9 @@ pub fn builtin_less(alloc: Allocator, args: Atom, result: *Atom) !void {
     const a = car(args);
     const b = car(cdr(args));
 
-    if (a.value != .integer or a.value != .integer) return error.Type;
+    if (a != .integer or a != .integer) return error.Type;
 
-    result.* = if (a.value.integer < b.value.integer) try make_sym(alloc, "T") else nil;
+    result.* = if (a.integer < b.integer) try make_sym(alloc, "T") else nil;
 }
 
 pub fn builtin_eq(alloc: Allocator, args: Atom, result: *Atom) !void {
@@ -116,15 +116,15 @@ pub fn builtin_eq(alloc: Allocator, args: Atom, result: *Atom) !void {
     const b = car(cdr(args));
 
     var eq: bool = undefined;
-    if (@enumToInt(a.value) == @enumToInt(b.value)) {
-        switch (a.value) {
+    if (@enumToInt(a) == @enumToInt(b)) {
+        switch (a) {
             .nil => eq = true,
-            .pair => |pair| eq = pair == b.value.pair,
-            .closure => |closure| eq = closure == b.value.closure,
-            .macro => |macro| eq = macro == b.value.macro,
-            .symbol => |symbol| eq = sliceEql(symbol, b.value.symbol),
-            .integer => |integer| eq = integer == b.value.integer,
-            .builtin => |builtin| eq = builtin == b.value.builtin,
+            .pair => |pair| eq = pair == b.pair,
+            .closure => |closure| eq = closure == b.closure,
+            .macro => |macro| eq = macro == b.macro,
+            .symbol => |symbol| eq = sliceEql(symbol, b.symbol),
+            .integer => |integer| eq = integer == b.integer,
+            .builtin => |builtin| eq = builtin == b.builtin,
         }
     } else {
         eq = false;
@@ -135,5 +135,5 @@ pub fn builtin_eq(alloc: Allocator, args: Atom, result: *Atom) !void {
 pub fn builtin_pairp(a: Allocator, args: Atom, result: *Atom) !void {
     if (nilp(args) or !nilp(cdr(args))) return error.Args;
 
-    result.* = if (car(args).value == .pair) try make_sym(a, "T") else nil;
+    result.* = if (car(args) == .pair) try make_sym(a, "T") else nil;
 }

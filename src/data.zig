@@ -27,11 +27,11 @@ pub fn cons(a: Allocator, car_val: Atom, cdr_val: Atom) !Atom {
     global_allocations = allocation;
 
     allocation.pair = .{ .atom = .{ car_val, cdr_val } };
-    return Atom{ .value = .{ .pair = &allocation.pair } };
+    return Atom{ .pair = &allocation.pair };
 }
 
 pub fn make_int(x: i64) Atom {
-    return .{ .value = .{ .integer = x } };
+    return .{ .integer = x };
 }
 
 var sym_table = nil;
@@ -41,23 +41,23 @@ pub fn make_sym(a: Allocator, s: []const u8) !Atom {
     var p = sym_table;
     while (!nilp(p)) : (p = cdr(p)) {
         atom = car(p);
-        if (std.mem.eql(u8, atom.value.symbol, s)) {
+        if (std.mem.eql(u8, atom.symbol, s)) {
             return atom;
         }
     }
-    atom.value = .{ .symbol = try a.dupe(u8, s) };
+    atom = .{ .symbol = try a.dupe(u8, s) };
     sym_table = try cons(a, atom, sym_table);
     return atom;
 }
 
 pub fn make_builtin(f: Builtin) Atom {
-    return .{ .value = .{ .builtin = f } };
+    return .{ .builtin = f };
 }
 
 pub fn listp(expr: Atom) bool {
     var it = expr;
     while (!nilp(it)) : (it = cdr(it)) {
-        if (it.value != .pair) return false;
+        if (it != .pair) return false;
     } else return true;
 }
 
@@ -105,7 +105,7 @@ pub fn list_reverse(list: *Atom) void {
 }
 
 pub fn gc_mark(root: Atom) void {
-    const pair = switch (root.value) {
+    const pair = switch (root) {
         .pair => |pair| pair,
         .closure => |closure| closure,
         .macro => |macro| macro,
@@ -144,7 +144,7 @@ pub fn deinit(alloc: Allocator) void {
     var it = sym_table;
     while (!nilp(it)) : (it = cdr(it)) {
         const sym = car(it);
-        alloc.free(sym.value.symbol);
+        alloc.free(sym.symbol);
     }
 
     var p = &global_allocations;

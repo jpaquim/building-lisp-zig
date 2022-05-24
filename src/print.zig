@@ -11,7 +11,7 @@ const PrintError = std.fs.File.WriteError;
 pub fn print_expr(atom: Atom) PrintError!void {
     const stdout = std.io.getStdOut().writer();
 
-    switch (atom.value) {
+    switch (atom) {
         .nil => {
             try stdout.writeAll("NIL");
         },
@@ -20,7 +20,7 @@ pub fn print_expr(atom: Atom) PrintError!void {
             try print_expr(car(atom));
             var current_atom = cdr(atom);
             while (!nilp(current_atom)) {
-                if (current_atom.value == .pair) {
+                if (current_atom == .pair) {
                     try stdout.writeByte(' ');
                     try print_expr(car(current_atom));
                     current_atom = cdr(current_atom);
