@@ -77,10 +77,10 @@ pub fn eval_expr(a: Allocator, expr_arg: Atom, env_arg: Atom) Error!Atom {
                     } else return error.Type;
                 } else if (std.mem.eql(u8, op.symbol, "LAMBDA")) {
                     if (nilp(args) or nilp(cdr(args))) return error.Args;
+
                     result = try make_closure(a, env, car(args), cdr(args));
                 } else if (std.mem.eql(u8, op.symbol, "IF")) {
-                    if (nilp(args) or nilp(cdr(args)) or nilp(cdr(cdr(args))) or !nilp(cdr(cdr(cdr(args)))))
-                        return error.Args;
+                    if (nilp(args) or nilp(cdr(args)) or nilp(cdr(cdr(args))) or !nilp(cdr(cdr(cdr(args))))) return error.Args;
 
                     stack = try make_frame(a, stack, env, cdr(args));
                     list_set(stack, 2, op);
@@ -100,9 +100,20 @@ pub fn eval_expr(a: Allocator, expr_arg: Atom, env_arg: Atom) Error!Atom {
                     try env_set(a, env, name, macro);
                 } else if (std.mem.eql(u8, op.symbol, "APPLY")) {
                     if (nilp(args) or nilp(cdr(args)) or !nilp(cdr(cdr(args)))) return error.Args;
+
                     stack = try make_frame(a, stack, env, cdr(args));
                     list_set(stack, 2, op);
                     expr = car(args);
+                    continue;
+                } else if (std.mem.eql(u8, op.symbol, "SET!")) {
+                    if (nilp(args) or nilp(cdr(args)) or !nilp(cdr(cdr(args)))) return error.Args;
+
+                    if (car(args) != .symbol) return error.Type;
+
+                    stack = try make_frame(a, stack, env, nil);
+                    list_set(stack, 2, op);
+                    list_set(stack, 4, car(args));
+                    expr = car(cdr(args));
                     continue;
                 } else {
                     // goto push;
@@ -160,6 +171,23 @@ pub fn env_set(a: Allocator, env: Atom, symbol: Atom, value: Atom) !void {
     }
     b = try cons(a, symbol, value);
     cdrP(env).* = try cons(a, b, cdr(env));
+}
+
+fn env_set_existing(a: Allocator, env: Atom, symbol: Atom, value: Atom) !void {
+    var parent = car(env);
+    var bs = cdr(env);
+    while (!nilp(bs)) {
+        const b = car(bs);
+        if (sliceEql(car(b).symbol, symbol.symbol)) {
+            cdrP(b).* = value;
+            return;
+        }
+        bs = cdr(bs);
+    }
+
+    if (nilp(parent)) return error.Unbound;
+
+    return env_set_existing(a, parent, symbol, value);
 }
 
 fn make_closure(a: Allocator, env: Atom, args: Atom, body: Atom) !Atom {
@@ -287,6 +315,11 @@ fn eval_do_return(a: Allocator, stack: *Atom, expr: *Atom, env: *Atom, result: *
             stack.* = car(stack.*);
             expr.* = try cons(a, try make_sym(a, "QUOTE"), try cons(a, sym, nil));
             return;
+        } else if (std.mem.eql(u8, op.symbol, "SET!")) {
+            const sym = list_get(stack.*, 4);
+            stack.* = car(stack.*);
+            expr.* = try cons(a, try make_sym(a, "QUOTE"), try cons(a, sym, nil));
+            return env_set_existing(a, env.*, sym, result.*);
         } else if (std.mem.eql(u8, op.symbol, "IF")) {
             args = list_get(stack.*, 3);
             expr.* = if (nilp(result.*)) car(cdr(args)) else car(args);
