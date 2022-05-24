@@ -29,37 +29,11 @@ const eval_expr = eval.eval_expr;
 
 const lisp = @import("./lisp.zig");
 const Atom = lisp.Atom;
+const Error = lisp.Error;
 const nil = lisp.nil;
 
 const print_expr = @import("./print.zig").print_expr;
 const read_expr = @import("./read.zig").read_expr;
-
-fn slurp(a: Allocator, path: []const u8) ![]const u8 {
-    const file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-    const len = @as(usize, (try file.stat()).size);
-    const buf = try file.reader().readAllAlloc(a, len);
-    return buf;
-}
-
-fn load_file(a: Allocator, env: Atom, path: []const u8) !void {
-    const stdout = std.io.getStdOut().writer();
-    try stdout.print("Reading {s}...\n", .{path});
-    const text = try slurp(a, path);
-    defer a.free(text);
-    var p = text;
-    var end = text;
-    while (read_expr(a, p, &end)) |expr| : (p = end) {
-        if (eval_expr(a, expr, env)) |result| {
-            try print_expr(result);
-            try stdout.writeByte('\n');
-        } else |_| {
-            try stdout.print("Error in expression:\n\t", .{});
-            try print_expr(expr);
-            try stdout.writeByte('\n');
-        }
-    } else |_| {}
-}
 
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -106,30 +80,61 @@ pub fn main() anyerror!void {
         };
         var end = input;
         const expr = read_expr(a, input, &end) catch |err| {
-            const message = switch (err) {
-                error.Syntax => "Syntax error",
-                error.OutOfMemory => "Out of memory!",
-            };
-            try stdout.writeAll(message);
-            try stdout.writeByte('\n');
+            try handleError(err, null, input);
             continue;
         };
         const result = eval_expr(a, expr, env) catch |err| {
-            const message = switch (err) {
-                error.Syntax => "Syntax error",
-                error.Unbound => "Symbol not bound",
-                error.Args => "Wrong number of arguments",
-                error.Type => "Wrong type",
-                error.OutOfMemory => "Out of memory!",
-            };
-            try stdout.writeAll(message);
-            try stdout.writeByte('\n');
-            try stdout.writeAll("Evaluating:\n\t");
-            try print_expr(expr);
-            try stdout.writeByte('\n');
+            try handleError(err, expr, null);
             continue;
         };
         try print_expr(result);
         try stdout.writeByte('\n');
     }
+}
+
+fn slurp(a: Allocator, path: []const u8) ![]const u8 {
+    const file = try std.fs.cwd().openFile(path, .{});
+    defer file.close();
+    const len = @as(usize, (try file.stat()).size);
+    const buf = try file.reader().readAllAlloc(a, len);
+    return buf;
+}
+
+fn load_file(a: Allocator, env: Atom, path: []const u8) !void {
+    const stdout = std.io.getStdOut().writer();
+    try stdout.print("Reading {s}...\n", .{path});
+    const text = try slurp(a, path);
+    defer a.free(text);
+    var p = text;
+    var end = text;
+    while (read_expr(a, p, &end)) |expr| : (p = end) {
+        if (eval_expr(a, expr, env)) |result| {
+            try print_expr(result);
+            try stdout.writeByte('\n');
+        } else |_| {
+            try stdout.print("Error in expression:\n\t", .{});
+            try print_expr(expr);
+            try stdout.writeByte('\n');
+        }
+    } else |_| {}
+}
+
+fn handleError(err: Error, expr: ?Atom, input: ?[]const u8) !void {
+    const message = switch (err) {
+        error.Syntax => "Syntax error",
+        error.Unbound => "Symbol not bound",
+        error.Args => "Wrong number of arguments",
+        error.Type => "Wrong type",
+        error.OutOfMemory => "Out of memory!",
+    };
+    const stdout = std.io.getStdOut().writer();
+    try stdout.print("Error: {s}\n", .{message});
+    if (expr) |exp| {
+        try stdout.writeAll("Evaluating: ");
+        try print_expr(exp);
+    }
+    if (input) |str| {
+        try stdout.print("Reading: {s}", .{str});
+    }
+    try stdout.writeByte('\n');
 }
