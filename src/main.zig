@@ -47,10 +47,58 @@ fn nilp(atom: Atom) bool {
 
 const nil = Atom{ .value = .nil };
 
+const Allocation = struct {
+    pair: Pair,
+    mark: bool,
+    next: ?*Allocation,
+};
+
+var global_allocations: ?*Allocation = null;
+
 fn cons(a: Allocator, car_val: Atom, cdr_val: Atom) !Atom {
-    var pair = try a.create(Pair);
-    pair.* = .{ .atom = .{ car_val, cdr_val } };
-    return Atom{ .value = .{ .pair = pair } };
+    var allocation = try a.create(Allocation);
+    allocation.mark = false;
+    allocation.next = global_allocations;
+    global_allocations = allocation;
+
+    allocation.pair = .{ .atom = .{ car_val, cdr_val } };
+    return Atom{ .value = .{ .pair = &allocation.pair } };
+}
+
+fn gc_mark(root: Atom) void {
+    const pair = switch (root.value) {
+        .pair => |pair| pair,
+        .closure => |closure| closure,
+        .macro => |macro| macro,
+        else => return,
+    };
+
+    const a = @fieldParentPtr(Allocation, "pair", pair);
+
+    if (a.mark) return;
+
+    a.mark = true;
+
+    gc_mark(car(root));
+    gc_mark(cdr(root));
+}
+
+fn gc(alloc: Allocator) void {
+    gc_mark(sym_table);
+
+    var p = &global_allocations;
+    while (p.*) |a| {
+        if (!a.mark) {
+            p.* = a.next;
+            alloc.destroy(a);
+        } else {
+            p = &a.next;
+        }
+    }
+    var a = global_allocations;
+    while (a) |allocation| : (a = allocation.next) {
+        allocation.mark = false;
+    }
 }
 
 fn make_int(x: i64) Atom {
@@ -691,12 +739,22 @@ fn eval_do_return(a: Allocator, stack: *Atom, expr: *Atom, env: *Atom, result: *
     list_set(stack.*, 3, cdr(args));
 }
 
+const count_gc = 100000;
+var count: usize = 0;
 fn eval_expr(a: Allocator, expr_arg: Atom, env_arg: Atom) Error!Atom {
     var expr = expr_arg;
     var env = env_arg;
     var result: Atom = undefined;
     var stack = nil;
     while (true) {
+        count += 1;
+        if (count == count_gc) {
+            gc_mark(expr);
+            gc_mark(env);
+            gc_mark(stack);
+            gc(a);
+            count = 0;
+        }
         if (expr.value == .symbol) {
             result = try env_get(env, expr);
         } else if (expr.value != .pair) {
@@ -788,9 +846,10 @@ fn eval_expr(a: Allocator, expr_arg: Atom, env_arg: Atom) Error!Atom {
 pub fn main() anyerror!void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
-    defer arena.deinit();
-    const a = arena.allocator();
+    const a = gpa.allocator();
+    // var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+    // defer arena.deinit();
+    // const a = arena.allocator();
 
     const stdin = std.io.getStdIn().reader();
     const stdout = std.io.getStdOut().writer();
