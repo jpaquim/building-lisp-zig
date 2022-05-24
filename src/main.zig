@@ -763,9 +763,9 @@ fn eval_expr(a: Allocator, expr_arg: Atom, env_arg: Atom) Error!Atom {
     while (true) {
         count += 1;
         if (count == count_gc) {
-            gc_mark(expr);
+            // gc_mark(expr);
             gc_mark(env);
-            gc_mark(stack);
+            // gc_mark(stack);
             gc(a);
             count = 0;
         }
